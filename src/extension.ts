@@ -153,6 +153,21 @@ export function activate(context: vscode.ExtensionContext) {
 			return;
 		}
 
+		// 选择语言
+		const languageOptions = [
+			{ label: '$(globe) Chinese (中文)', value: 'zh' },
+			{ label: '$(globe) English', value: 'en' }
+		];
+		const selectedLanguage = await vscode.window.showQuickPick(languageOptions, {
+			placeHolder: isChinese() ? '请选择提交消息的语言' : 'Select commit message language',
+			title: isChinese() ? '语言选择' : 'Language Selection'
+		});
+		if (!selectedLanguage) {
+			output.appendLine(isChinese() ? '未选择语言，操作已取消。' : 'No language selected, operation cancelled.');
+			return;
+		}
+		const locale = selectedLanguage.value;
+
 		if (!statusItem) {
 			statusItem = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, 1000);
 		}
@@ -170,7 +185,6 @@ export function activate(context: vscode.ExtensionContext) {
 			}
 
 			// 2. 调用 API 生成消息
-			const locale = isChinese() ? 'zh' : 'en';
 			const commitMsg = await generateCommitMessage(diff, locale, apiKey);
 
 			// 3. 设置提交消息

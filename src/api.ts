@@ -203,7 +203,9 @@ export async function generateCommitMessage(diff: string, locale: string, apiKey
             : 'API Key is not provided.');
     }
 
-    const systemPrompt = locale === 'zh' ? PROMPT_ZH : PROMPT_EN;
+    const systemPrompt = locale === 'zh'
+        ? (config.get<string>('promptZH') || PROMPT_ZH)
+        : (config.get<string>('promptEN') || PROMPT_EN);
     const userMessage = `Git Diff:\n${diff}`;
 
     try {
