@@ -43,3 +43,35 @@ export async function getGitDiff(folderPath: string): Promise<string> {
         });
     });
 }
+
+/**
+ * 截断 Git Diff 内容，每个文件保留前 maxLinesPerFile 行
+ * @param diff 完整的 Git Diff 字符串
+ * @param maxLinesPerFile 每个文件保留的最大行数，默认 10
+ * @returns 截断后的 Diff 字符串
+ */
+export function truncateDiff(diff: string, maxLinesPerFile: number = 10): string {
+    // 按文件分割 diff（以 "diff --git" 开头）
+    const fileDiffs = diff.split(/(?=diff --git)/);
+
+    const truncatedDiffs = fileDiffs.map(fileDiff => {
+        if (!fileDiff.trim()) {
+            return '';
+        }
+
+        const lines = fileDiff.split('\n');
+
+        if (lines.length <= maxLinesPerFile) {
+            return fileDiff;
+        }
+
+        // 保留前 maxLinesPerFile 行，并添加截断提示
+        const truncatedLines = lines.slice(0, maxLinesPerFile);
+        const remainingLines = lines.length - maxLinesPerFile;
+        truncatedLines.push(`... (${remainingLines} more lines truncated)`);
+
+        return truncatedLines.join('\n');
+    });
+
+    return truncatedDiffs.join('\n');
+}

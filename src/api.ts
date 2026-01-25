@@ -191,7 +191,7 @@ async function callOpenAICompatibleAPI(
     return cleanContent.trim();
 }
 
-export async function generateCommitMessage(diff: string, locale: string, apiKey: string): Promise<string> {
+export async function generateCommitMessage(diff: string, locale: string, apiKey: string, customInstructions?: string): Promise<string> {
     const config = vscode.workspace.getConfiguration('ai-commit-message');
     const provider = config.get<string>('apiProvider', 'openai') as APIProvider;
     const apiUrl = config.get<string>('apiUrl', getDefaultApiUrl(provider));
@@ -206,7 +206,12 @@ export async function generateCommitMessage(diff: string, locale: string, apiKey
     const systemPrompt = locale === 'zh'
         ? (config.get<string>('promptZH') || PROMPT_ZH)
         : (config.get<string>('promptEN') || PROMPT_EN);
-    const userMessage = `Git Diff:\n${diff}`;
+
+    // 构建用户消息，包含可选的自定义指令
+    let userMessage = `Git Diff:\n${diff}`;
+    if (customInstructions && customInstructions.trim()) {
+        userMessage += `\n\nAdditional Instructions:\n${customInstructions.trim()}`;
+    }
 
     try {
         if (provider === 'claude') {

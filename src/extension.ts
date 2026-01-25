@@ -2,7 +2,7 @@
 // Import the module and reference it with the alias vscode in your code below
 import * as vscode from 'vscode';
 import { provider } from './provider';
-import { getGitDiff } from './git';
+import { getGitDiff, truncateDiff } from './git';
 import { generateCommitMessage, type APIProvider } from './api';
 
 // 语言判定: VSCode 的 UI 语言是否为中文 (zh*)
@@ -153,20 +153,65 @@ export function activate(context: vscode.ExtensionContext) {
 			return;
 		}
 
-		// 选择语言
-		const languageOptions = [
-			{ label: '$(globe) Chinese (中文)', value: 'zh' },
-			{ label: '$(globe) English', value: 'en' }
+		// 选择模式
+		const modeOptions = [
+			{ label: '$(globe) Chinese (中文)', value: 'zh', isCustom: false },
+			{ label: '$(globe) English', value: 'en', isCustom: false },
+			{ label: '$(gear) Custom (自定义)', value: 'custom', isCustom: true }
 		];
-		const selectedLanguage = await vscode.window.showQuickPick(languageOptions, {
-			placeHolder: isChinese() ? '请选择提交消息的语言' : 'Select commit message language',
-			title: isChinese() ? '语言选择' : 'Language Selection'
+		const selectedMode = await vscode.window.showQuickPick(modeOptions, {
+			placeHolder: isChinese() ? '请选择语言或自定义模式' : 'Select language or custom mode',
+			title: isChinese() ? '生成模式' : 'Generation Mode'
 		});
-		if (!selectedLanguage) {
-			output.appendLine(isChinese() ? '未选择语言，操作已取消。' : 'No language selected, operation cancelled.');
+		if (!selectedMode) {
+			output.appendLine(isChinese() ? '未选择模式，操作已取消。' : 'No mode selected, operation cancelled.');
 			return;
 		}
-		const locale = selectedLanguage.value;
+
+		let locale = selectedMode.value;
+		let shouldTruncate = false;
+		let customInstructions = '';
+
+		// 自定义模式：依次询问截断、语言、指令
+		if (selectedMode.isCustom) {
+			// Step 1: Diff 处理选项
+			const truncateOptions = [
+				{ label: '$(file-code) Smart Truncate (智能截断)', description: isChinese() ? '每个文件保留前10行差异' : 'Keep first 10 lines per file', value: true },
+				{ label: '$(file) Full Diff (完整发送)', description: isChinese() ? '发送完整的差异内容' : 'Send complete diff content', value: false }
+			];
+			const truncateChoice = await vscode.window.showQuickPick(truncateOptions, {
+				placeHolder: isChinese() ? '是否启用智能截断？' : 'Enable smart truncation?',
+				title: isChinese() ? 'Diff 处理方式' : 'Diff Processing'
+			});
+			if (!truncateChoice) {
+				output.appendLine(isChinese() ? '未选择截断模式，操作已取消。' : 'No truncation mode selected, operation cancelled.');
+				return;
+			}
+			shouldTruncate = truncateChoice.value;
+
+			// Step 2: 语言选择
+			const langOptions = [
+				{ label: '$(globe) Chinese (中文)', value: 'zh' },
+				{ label: '$(globe) English', value: 'en' }
+			];
+			const langChoice = await vscode.window.showQuickPick(langOptions, {
+				placeHolder: isChinese() ? '请选择提交消息的语言' : 'Select commit message language',
+				title: isChinese() ? '语言选择' : 'Language Selection'
+			});
+			if (!langChoice) {
+				output.appendLine(isChinese() ? '未选择语言，操作已取消。' : 'No language selected, operation cancelled.');
+				return;
+			}
+			locale = langChoice.value;
+
+			// Step 3: 自定义指令
+			const instructionsInput = await vscode.window.showInputBox({
+				prompt: isChinese() ? '请输入额外指令（可选）' : 'Enter additional instructions (optional)',
+				placeHolder: isChinese() ? '例如：使用幽默的语气、重点描述 API 变化' : 'e.g., Use a humorous tone, focus on API changes',
+				ignoreFocusOut: true
+			});
+			customInstructions = instructionsInput || '';
+		}
 
 		if (!statusItem) {
 			statusItem = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, 1000);
@@ -177,15 +222,21 @@ export function activate(context: vscode.ExtensionContext) {
 
 		try {
 			// 1. 获取 Git Diff
-			const diff = await getGitDiff(workspacePath);
+			let diff = await getGitDiff(workspacePath);
 			if (!diff || !diff.trim()) {
 				output.appendLine(M.commitArea.noDiff());
 				statusItem.hide();
 				return;
 			}
 
-			// 2. 调用 API 生成消息
-			const commitMsg = await generateCommitMessage(diff, locale, apiKey);
+			// 2. 如果启用截断，处理 diff
+			if (shouldTruncate) {
+				diff = truncateDiff(diff);
+				output.appendLine(isChinese() ? '[信息] 已启用智能截断模式' : '[Info] Smart truncation enabled');
+			}
+
+			// 3. 调用 API 生成消息
+			const commitMsg = await generateCommitMessage(diff, locale, apiKey, customInstructions);
 
 			// 3. 设置提交消息
 			if (commitMsg) {
