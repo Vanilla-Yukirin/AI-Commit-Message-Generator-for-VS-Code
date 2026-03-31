@@ -235,13 +235,15 @@ export function activate(context: vscode.ExtensionContext) {
 				output.appendLine(isChinese() ? '[信息] 已启用智能截断模式' : '[Info] Smart truncation enabled');
 			}
 
-			// 3. 调用 API 生成消息
-			const commitMsg = await generateCommitMessage(diff, locale, apiKey, customInstructions);
+			// 3. 调用 API 生成消息（流式输出到 output 面板）
+			output.appendLine(isChinese() ? '生成的消息:' : 'Generated Message:');
+			const commitMsg = await generateCommitMessage(diff, locale, apiKey, customInstructions, (chunk) => {
+				output.append(chunk);
+			});
+			output.appendLine('');
 
-			// 3. 设置提交消息
+			// 4. 设置提交消息
 			if (commitMsg) {
-				output.appendLine(isChinese() ? '生成的消息:' : 'Generated Message:');
-				output.appendLine(commitMsg);
 				await setCommitMessage(commitMsg, output);
 				output.appendLine(M.commitArea.copiedDone());
 			} else {
