@@ -79,43 +79,68 @@ function cleanCodeBlock(text: string): string {
     return clean.trim();
 }
 
-// 解析 SSE 行，提取文本 chunk（OpenAI/Azure 格式）
-function parseOpenAIChunk(line: string): string {
-    if (!line.startsWith('data: ')) { return ''; }
+// SSE 解析结果：text 为最终正文，thinking 为推理过程
+interface ParsedChunk {
+    text?: string;
+    thinking?: string;
+}
+
+export type ChunkKind = 'text' | 'thinking';
+
+// 解析 SSE 行（OpenAI/Azure 格式）
+// 兼容: DeepSeek R1 的 delta.reasoning_content、部分网关的 delta.reasoning
+function parseOpenAIChunk(line: string): ParsedChunk {
+    if (!line.startsWith('data: ')) { return {}; }
     const data = line.slice(6);
-    if (data === '[DONE]') { return ''; }
+    if (data === '[DONE]') { return {}; }
     try {
         const json = JSON.parse(data);
-        return json.choices?.[0]?.delta?.content || '';
+        const delta = json.choices?.[0]?.delta;
+        if (!delta) { return {}; }
+        return {
+            text: delta.content || undefined,
+            thinking: delta.reasoning_content || delta.reasoning || undefined,
+        };
     } catch {
-        return '';
+        return {};
     }
 }
 
-// 解析 SSE 行，提取文本 chunk（Claude 格式）
-function parseClaudeChunk(line: string): string {
-    if (!line.startsWith('data: ')) { return ''; }
+// 解析 SSE 行（Claude 格式）
+function parseClaudeChunk(line: string): ParsedChunk {
+    if (!line.startsWith('data: ')) { return {}; }
     try {
         const json = JSON.parse(line.slice(6));
         if (json.type === 'content_block_delta' && json.delta?.type === 'text_delta') {
-            return json.delta.text || '';
+            return { text: json.delta.text || undefined };
         }
     } catch {
         // ignore
     }
-    return '';
+    return {};
 }
 
 // 读取 SSE 流，通用逻辑
+// onChunk 会同时收到 text 和 thinking 两种 kind；只有 text 会累加进返回值
 async function readSSEStream(
     body: ReadableStream<Uint8Array>,
-    parseChunk: (line: string) => string,
-    onChunk: (chunk: string) => void
+    parseChunk: (line: string) => ParsedChunk,
+    onChunk: (chunk: string, kind: ChunkKind) => void
 ): Promise<string> {
     const reader = body.getReader();
     const decoder = new TextDecoder();
     let fullText = '';
     let buffer = '';
+
+    const emit = (parsed: ParsedChunk) => {
+        if (parsed.thinking) {
+            onChunk(parsed.thinking, 'thinking');
+        }
+        if (parsed.text) {
+            fullText += parsed.text;
+            onChunk(parsed.text, 'text');
+        }
+    };
 
     while (true) {
         const { done, value } = await reader.read();
@@ -126,21 +151,12 @@ async function readSSEStream(
         buffer = lines.pop() ?? '';
 
         for (const line of lines) {
-            const chunk = parseChunk(line.trimEnd());
-            if (chunk) {
-                fullText += chunk;
-                onChunk(chunk);
-            }
+            emit(parseChunk(line.trimEnd()));
         }
     }
 
-    // 处理 buffer 中剩余内容
     if (buffer) {
-        const chunk = parseChunk(buffer.trimEnd());
-        if (chunk) {
-            fullText += chunk;
-            onChunk(chunk);
-        }
+        emit(parseChunk(buffer.trimEnd()));
     }
 
     return cleanCodeBlock(fullText);
@@ -153,7 +169,7 @@ async function callClaudeAPI(
     apiUrl: string,
     model: string,
     apiKey: string,
-    onChunk: (chunk: string) => void
+    onChunk: (chunk: string, kind: ChunkKind) => void
 ): Promise<string> {
     const response = await fetch(apiUrl, {
         method: 'POST',
@@ -187,7 +203,7 @@ async function callOpenAICompatibleAPI(
     model: string,
     apiKey: string,
     provider: APIProvider,
-    onChunk: (chunk: string) => void
+    onChunk: (chunk: string, kind: ChunkKind) => void
 ): Promise<string> {
     const headers: Record<string, string> = {
         'Content-Type': 'application/json',
@@ -226,7 +242,7 @@ export async function generateCommitMessage(
     locale: string,
     apiKey: string,
     customInstructions?: string,
-    onChunk?: (chunk: string) => void
+    onChunk?: (chunk: string, kind: ChunkKind) => void
 ): Promise<string> {
     const config = vscode.workspace.getConfiguration('ai-commit-message');
     const provider = config.get<string>('apiProvider', 'openai') as APIProvider;
@@ -248,7 +264,7 @@ export async function generateCommitMessage(
         userMessage += `\n\nAdditional Instructions:\n${customInstructions.trim()}`;
     }
 
-    const chunk = onChunk ?? (() => { });
+    const chunk: (c: string, k: ChunkKind) => void = onChunk ?? (() => { });
 
     try {
         if (provider === 'claude') {

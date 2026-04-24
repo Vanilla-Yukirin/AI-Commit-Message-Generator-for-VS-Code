@@ -63,6 +63,11 @@
           "editPresentation": "multilineText",
           "default": "Consolidate ALL changes in the git diff into **A SINGLE** Conventional Commits message.\n\nCORE PRINCIPLE: Regardless of how many files are changed, output **ONLY ONE Header and ONE Body**.\n\nRequirements:\n- Header: <type>(<scope>): <English, max 50 chars, imperative, no period>\n- Scope: Summarize all changes into one primary scope, or use generic ones like \"project\", \"refactor\". **DO NOT** output multiple headers.\n- Body: Required, use - bullets, grouped by logical functionality (e.g., \"Fix build issues\", \"Optimize UI\").\n- **STRICTLY FORBIDDEN** to split by file (e.g., \"feat(A): ... feat(B): ...\" is WRONG).\n- Ignore whitespace-only changes (unless style type)\n- Output ONLY the commit message, no code blocks or explanation",
           "description": "英文提示词模板 (English Prompt Template)"
+        },
+        "ai-commit-message.showThinking": {
+          "type": "boolean",
+          "default": true,
+          "description": "显示模型的推理过程 (Show model's reasoning/thinking output if present, e.g. DeepSeek R1's reasoning_content). Thinking is printed to the output panel only and never included in the commit message."
         }
       }
     },

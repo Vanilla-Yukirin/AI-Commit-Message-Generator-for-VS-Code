@@ -236,8 +236,25 @@ export function activate(context: vscode.ExtensionContext) {
 			}
 
 			// 3. 调用 API 生成消息（流式输出到 output 面板）
-			output.appendLine(isChinese() ? '生成的消息:' : 'Generated Message:');
-			const commitMsg = await generateCommitMessage(diff, locale, apiKey, customInstructions, (chunk) => {
+			const showThinking = vscode.workspace
+				.getConfiguration('ai-commit-message')
+				.get<boolean>('showThinking', true);
+
+			let currentSection: 'thinking' | 'text' | null = null;
+			const switchSection = (next: 'thinking' | 'text') => {
+				if (currentSection === next) { return; }
+				if (currentSection !== null) {
+					output.append('\n\n');
+				}
+				output.appendLine(next === 'thinking'
+					? (isChinese() ? '[思考过程]' : '[Thinking]')
+					: (isChinese() ? '[生成的消息]' : '[Message]'));
+				currentSection = next;
+			};
+
+			const commitMsg = await generateCommitMessage(diff, locale, apiKey, customInstructions, (chunk, kind) => {
+				if (kind === 'thinking' && !showThinking) { return; }
+				switchSection(kind);
 				output.append(chunk);
 			});
 			output.appendLine('');
