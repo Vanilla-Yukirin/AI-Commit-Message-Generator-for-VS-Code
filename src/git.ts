@@ -1,10 +1,14 @@
 import { spawn } from 'child_process';
 import * as path from 'path';
 
+// 关闭 core.quotepath，让 git 输出 UTF-8 文件名而非 \xxx\xxx 八进制转义；仅本次调用生效
+const GIT_BASE_ARGS = ['-c', 'core.quotepath=false'];
+const GIT_SPAWN_OPTS = (cwd: string) => ({ cwd, env: { ...process.env, LC_ALL: 'C.UTF-8' } });
+
 export async function getGitDiff(folderPath: string): Promise<string> {
     return new Promise((resolve, reject) => {
         // First try to get staged changes
-        const staged = spawn('git', ['diff', '--cached'], { cwd: folderPath });
+        const staged = spawn('git', [...GIT_BASE_ARGS, 'diff', '--cached'], GIT_SPAWN_OPTS(folderPath));
         let stdout = '';
         let stderr = '';
 
@@ -16,12 +20,12 @@ export async function getGitDiff(folderPath: string): Promise<string> {
                 resolve(stdout);
             } else {
                 // If no staged changes, try to get all changes (optional, based on requirement "next intended commit")
-                // For now, let's stick to staged changes or if empty, maybe warn? 
-                // The original requirement says: "targeting exclusively the staged changes when any files are staged, 
+                // For now, let's stick to staged changes or if empty, maybe warn?
+                // The original requirement says: "targeting exclusively the staged changes when any files are staged,
                 // or otherwise targeting what would be included in the next intended commit"
                 // So if staged is empty, we check unstaged.
 
-                const unstaged = spawn('git', ['diff'], { cwd: folderPath });
+                const unstaged = spawn('git', [...GIT_BASE_ARGS, 'diff'], GIT_SPAWN_OPTS(folderPath));
                 let uStdout = '';
                 let uStderr = '';
 
